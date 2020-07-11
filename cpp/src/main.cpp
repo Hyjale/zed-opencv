@@ -44,11 +44,11 @@ int main(int argc, char **argv) {
 
     // Set configuration parameters
     InitParameters init_params;
-    init_params.camera_resolution = RESOLUTION::HD1080;
+    init_params.camera_resolution = RESOLUTION::VGA;
     init_params.depth_mode = DEPTH_MODE::ULTRA;
     init_params.coordinate_units = UNIT::METER;
     if (argc > 1) init_params.input.setFromSVOFile(argv[1]);
-        
+
     // Open the camera
     ERROR_CODE err = zed.open(init_params);
     if (err != ERROR_CODE::SUCCESS) {
@@ -100,6 +100,26 @@ int main(int argc, char **argv) {
             // Handle key event
             key = cv::waitKey(10);
             processKeyEvent(zed, key);
+
+            std::cout << "Left cam fx: " << zed.getCameraInformation().calibration_parameters.left_cam.fx << std::endl;
+            std::cout << "Left cam fy: " << zed.getCameraInformation().calibration_parameters.left_cam.fy << std::endl;
+            std::cout << "Left cam cx: " << zed.getCameraInformation().calibration_parameters.left_cam.cx << std::endl;
+            std::cout << "Left cam cy: " << zed.getCameraInformation().calibration_parameters.left_cam.cy << std::endl;
+            std::cout << "Left cam k1: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[0] << std::endl;
+            std::cout << "Left cam k2: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[1] << std::endl;
+            std::cout << "Left cam p1: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[2] << std::endl;
+            std::cout << "Left cam p2: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[3] << std::endl;
+            std::cout << "Left cam k3: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[4] <<"\n" <<std::endl;
+
+            std::cout << "Right cam fx: " << zed.getCameraInformation().calibration_parameters.right_cam.fx << std::endl;
+            std::cout << "Right cam fy: " << zed.getCameraInformation().calibration_parameters.right_cam.fy << std::endl;
+            std::cout << "Right cam cx: " << zed.getCameraInformation().calibration_parameters.right_cam.cx << std::endl;
+            std::cout << "Right cam cy: " << zed.getCameraInformation().calibration_parameters.right_cam.cy << std::endl;
+            std::cout << "Right cam k1: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[0] << std::endl;
+            std::cout << "Right cam k2: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[1] << std::endl;
+            std::cout << "Right cam p1: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[2] << std::endl;
+            std::cout << "Right cam p2: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[3] << std::endl;
+            std::cout << "Right cam k3: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[4] <<"\n" <<std::endl;
         }
     }
     zed.close();
