@@ -31,6 +31,9 @@
 
 // Sample includes
 #include <SaveDepth.hpp>
+#include <thread>
+#include <time_tracker.h>
+#include <chrono>
 
 using namespace sl;
 
@@ -45,8 +48,10 @@ int main(int argc, char **argv) {
     // Set configuration parameters
     InitParameters init_params;
     init_params.camera_resolution = RESOLUTION::VGA;
-    init_params.depth_mode = DEPTH_MODE::ULTRA;
     init_params.coordinate_units = UNIT::METER;
+    init_params.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Z_UP_X_FWD; // Coordinate system used in ROS
+    init_params.camera_fps = 60;
+    init_params.depth_mode = DEPTH_MODE::NONE;
     if (argc > 1) init_params.input.setFromSVOFile(argv[1]);
 
     // Open the camera
@@ -63,64 +68,70 @@ int main(int argc, char **argv) {
     // Set runtime parameters after opening the camera
     RuntimeParameters runtime_parameters;
     runtime_parameters.sensing_mode = SENSING_MODE::STANDARD;
+    runtime_parameters.enable_depth = false;
 
     // Prepare new image size to retrieve half-resolution images
     Resolution image_size = zed.getCameraInformation().camera_resolution;
-    int new_width = image_size.width / 2;
-    int new_height = image_size.height / 2;
-
-    Resolution new_image_size(new_width, new_height);
 
     // To share data between sl::Mat and cv::Mat, use slMat2cvMat()
     // Only the headers and pointer to the sl::Mat are copied, not the data itself
-    Mat image_zed(new_width, new_height, MAT_TYPE::U8_C4);
-    cv::Mat image_ocv = slMat2cvMat(image_zed);
-    Mat depth_image_zed(new_width, new_height, MAT_TYPE::U8_C4);
-    cv::Mat depth_image_ocv = slMat2cvMat(depth_image_zed);
-    Mat point_cloud;
+    Mat imageL_zed(image_size.width, image_size.height, MAT_TYPE::U8_C4);
+    cv::Mat imageL_ocv = slMat2cvMat(imageL_zed);
+    Mat imageR_zed(image_size.width, image_size.height, MAT_TYPE::U8_C4);
+    cv::Mat imageR_ocv = slMat2cvMat(imageR_zed);
+    cv::Mat grayL;
+    cv::Mat grayR;
+
+    SensorsData sensors_data;
+    Timestamp last_imu_ts = 0;
 
     // Loop until 'q' is pressed
     char key = ' ';
-    while (key != 'q') {
+    while (true) {
+        timer tWall = {.name = "wall_time",.clock_id = CLOCK_REALTIME,};
+        start_timer(&tWall);
 
+        // camera thread
         if (zed.grab(runtime_parameters) == ERROR_CODE::SUCCESS) {
 
             // Retrieve the left image, depth image in half-resolution
-            zed.retrieveImage(image_zed, VIEW::LEFT, MEM::CPU, new_image_size);
-            zed.retrieveImage(depth_image_zed, VIEW::DEPTH, MEM::CPU, new_image_size);
+            zed.retrieveImage(imageL_zed, VIEW::LEFT, MEM::CPU, image_size);
+            zed.retrieveImage(imageR_zed, VIEW::RIGHT, MEM::CPU, image_size);
 
-            // Retrieve the RGBA point cloud in half-resolution
-            // To learn how to manipulate and display point clouds, see Depth Sensing sample
-            zed.retrieveMeasure(point_cloud, MEASURE::XYZRGBA, MEM::CPU, new_image_size);
+            stop_timer(&tWall);
+    				print_timer(&tWall);
 
-            // Display image and depth using cv:Mat which share sl:Mat data
-            cv::imshow("Image", image_ocv);
-            cv::imshow("Depth", depth_image_ocv);
-
-            // Handle key event
-            key = cv::waitKey(10);
-            processKeyEvent(zed, key);
-
-            std::cout << "Left cam fx: " << zed.getCameraInformation().calibration_parameters.left_cam.fx << std::endl;
-            std::cout << "Left cam fy: " << zed.getCameraInformation().calibration_parameters.left_cam.fy << std::endl;
-            std::cout << "Left cam cx: " << zed.getCameraInformation().calibration_parameters.left_cam.cx << std::endl;
-            std::cout << "Left cam cy: " << zed.getCameraInformation().calibration_parameters.left_cam.cy << std::endl;
-            std::cout << "Left cam k1: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[0] << std::endl;
-            std::cout << "Left cam k2: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[1] << std::endl;
-            std::cout << "Left cam p1: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[2] << std::endl;
-            std::cout << "Left cam p2: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[3] << std::endl;
-            std::cout << "Left cam k3: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[4] <<"\n" <<std::endl;
-
-            std::cout << "Right cam fx: " << zed.getCameraInformation().calibration_parameters.right_cam.fx << std::endl;
-            std::cout << "Right cam fy: " << zed.getCameraInformation().calibration_parameters.right_cam.fy << std::endl;
-            std::cout << "Right cam cx: " << zed.getCameraInformation().calibration_parameters.right_cam.cx << std::endl;
-            std::cout << "Right cam cy: " << zed.getCameraInformation().calibration_parameters.right_cam.cy << std::endl;
-            std::cout << "Right cam k1: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[0] << std::endl;
-            std::cout << "Right cam k2: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[1] << std::endl;
-            std::cout << "Right cam p1: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[2] << std::endl;
-            std::cout << "Right cam p2: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[3] << std::endl;
-            std::cout << "Right cam k3: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[4] <<"\n" <<std::endl;
+            // std::cout << "Left cam fx: " << zed.getCameraInformation().calibration_parameters.left_cam.fx << std::endl;
+            // std::cout << "Left cam fy: " << zed.getCameraInformation().calibration_parameters.left_cam.fy << std::endl;
+            // std::cout << "Left cam cx: " << zed.getCameraInformation().calibration_parameters.left_cam.cx << std::endl;
+            // std::cout << "Left cam cy: " << zed.getCameraInformation().calibration_parameters.left_cam.cy << std::endl;
+            // std::cout << "Left cam k1: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[0] << std::endl;
+            // std::cout << "Left cam k2: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[1] << std::endl;
+            // std::cout << "Left cam p1: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[2] << std::endl;
+            // std::cout << "Left cam p2: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[3] << std::endl;
+            // std::cout << "Left cam k3: " << zed.getCameraInformation().calibration_parameters.left_cam.disto[4] <<"\n" <<std::endl;
+            //
+            // std::cout << "Right cam fx: " << zed.getCameraInformation().calibration_parameters.right_cam.fx << std::endl;
+            // std::cout << "Right cam fy: " << zed.getCameraInformation().calibration_parameters.right_cam.fy << std::endl;
+            // std::cout << "Right cam cx: " << zed.getCameraInformation().calibration_parameters.right_cam.cx << std::endl;
+            // std::cout << "Right cam cy: " << zed.getCameraInformation().calibration_parameters.right_cam.cy << std::endl;
+            // std::cout << "Right cam k1: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[0] << std::endl;
+            // std::cout << "Right cam k2: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[1] << std::endl;
+            // std::cout << "Right cam p1: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[2] << std::endl;
+            // std::cout << "Right cam p2: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[3] << std::endl;
+            // std::cout << "Right cam k3: " << zed.getCameraInformation().calibration_parameters.right_cam.disto[4] <<"\n" <<std::endl;
         }
+
+        // // imu thread
+        // zed.getSensorsData(sensors_data, TIME_REFERENCE::CURRENT);
+        // if (sensors_data.imu.timestamp > last_imu_ts) {
+        //   std::this_thread::sleep_for(std::chrono::milliseconds{2});
+        //   std::cout << "IMU Rate: " << sensors_data.imu.effective_rate << "\n" << std::endl;
+        //   last_imu_ts = sensors_data.imu.timestamp;
+        //
+        //   stop_timer(&tWall);
+        //   print_timer(&tWall);
+        // }
     }
     zed.close();
     return 0;
